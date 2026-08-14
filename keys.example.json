@@ -1,0 +1,23 @@
+{
+  "_commentaire": "Copier en keys.json et remplir. keys.json n'est jamais versionne.",
+
+  "vlm_provider": "sambanova",
+  "vlm_model": "gemma-4-31B-it",
+  "vlm_key": "",
+  "arbiter_model": "gpt-oss-120b",
+  "arbiter_fallback": "DeepSeek-V3.2",
+
+  "role": "complet",
+  "bind": "127.0.0.1",
+  "site_token": "",
+  "ia_url": "",
+  "ia_token": "",
+  "origines": "",
+
+  "firms": "",
+  "acled_key": "",
+  "acled_email": "",
+  "aisstream": "",
+  "windy": "",
+  "ny511": ""
+}

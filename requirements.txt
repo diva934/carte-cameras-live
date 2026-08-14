@@ -1,0 +1,16 @@
+# --- Socle : suffisant pour la carte, les cameras, l'assistant et le mode "site" (VPS) ---
+opencv-python-headless>=4.9      # extraction d'images de flux video
+yt-dlp>=2026.1                   # resolution des flux YouTube
+pywebview>=4.4 ; sys_platform == "win32"   # fenetre native, poste local uniquement
+
+# --- Analyse de photo : uniquement sur le poste equipe d'un GPU (role complet ou worker) ---
+# torch et torchvision : installer la variante CUDA depuis pytorch.org, pas depuis PyPI
+# torch>=2.5,<2.6
+# torchvision>=0.20,<0.21
+# geoclip==1.2.0                 # installer avec --no-deps pour ne pas ecraser torch CUDA
+# transformers>=4.55,<5          # < 5 obligatoire : en 5.x GeoCLIP casse (get_image_features)
+# geopy                          # dependance de geoclip
+# pandas                         # dependance de geoclip
+# rapidocr-onnxruntime>=1.4      # OCR de scene (modeles PP-OCR en ONNX)
+# exifread>=3.0                  # metadonnees EXIF etendues
+# ultralytics                    # detection YOLO et floutage

@@ -1,0 +1,39 @@
+# --- secrets : ne doivent JAMAIS partir sur GitHub ---
+keys.json
+.env
+
+# --- poids de modeles (plusieurs centaines de Mo, retelecharges automatiquement) ---
+*.pt
+*.pth
+*.onnx
+
+# --- caches de catalogues, regeneres au demarrage ---
+geocache.json
+whatsupcams.json
+skylinewebcams.json
+webcamtaxi.json
+webcamhopper.json
+windy_webcams.json
+nysdot_cams.json
+airports_major.json
+planes.json
+planes_usage.json
+earthcam_geocache.json
+
+# --- donnees produites a l'usage ---
+enquetes/
+_bench_cache/
+b_*.json
+bench_*.json
+*.log
+
+# --- sauvegardes et temporaires ---
+*.avant_refonte
+*.bak_*
+_*.py
+_*.jpg
+_*.ts
+__pycache__/
+*.pyc
+.venv/
+venv/
