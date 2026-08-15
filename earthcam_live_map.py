@@ -13,7 +13,7 @@ Usage : python earthcam_live_map.py   ->  fenetre app "Carte Cameras Live"
 import json, re, time, threading, webbrowser, urllib.parse, urllib.request, urllib.error, subprocess, sys, os, html as html_lib, concurrent.futures, csv, io, base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-PORT = 8770
+PORT = int(os.environ.get("PORT") or os.environ.get("CARTE_PORT") or 8770)
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/125.0 Safari/537.36")
 GEOCACHE_FILE = "geocache.json"
