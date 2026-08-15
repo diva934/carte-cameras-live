@@ -3,6 +3,21 @@
 const API=(typeof window!=='undefined'&&window.CARTE_API)?String(window.CARTE_API).replace(/\/$/,''):'';
 const api=chemin=>API+chemin;
 
+// Wrapper fetch : injecte Authorization: Bearer sur toutes les requetes vers l'API Railway
+(function(){
+    const _fetch=window.fetch.bind(window);
+    window.fetch=function(url,opts){
+          opts=opts||{};
+          const token=(typeof window!=='undefined'&&window.CARTE_TOKEN)?String(window.CARTE_TOKEN):'';
+          if(token&&API&&typeof url==='string'&&url.startsWith(API)){
+                  const headers=new Headers(opts.headers||{});
+                  if(!headers.has('Authorization'))headers.set('Authorization','Bearer '+token);
+                  opts=Object.assign({},opts,{headers});
+          }
+          return _fetch(url,opts);
+    };
+})();
+
 (function(){
   const panel=document.getElementById('railPanel'),title=document.getElementById('panelTitle');
   const btns=Array.from(document.querySelectorAll('.rbtn[data-pane]'));
