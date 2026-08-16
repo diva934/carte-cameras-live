@@ -189,6 +189,7 @@ body{display:block;overflow:hidden}
 .cam.skyline{background:var(--blue);box-shadow:0 0 0 2px #2f81f755,0 0 8px var(--blue)}
 .cam.taxi{background:var(--blue);box-shadow:0 0 0 2px #2f81f755,0 0 8px var(--blue)}
 .cam.hopper{background:var(--blue);box-shadow:0 0 0 2px #2f81f755,0 0 8px var(--blue)}
+.cam.windy{background:#b06bff;box-shadow:0 0 0 2px #b06bff55,0 0 8px #b06bff}
 .cameraDesk{position:fixed;inset:0;z-index:2000;pointer-events:none;overflow:hidden}
 .cameraWindow{position:absolute;width:min(680px,calc(100vw - 24px));background:var(--panel);border:1px solid var(--line2);overflow:hidden;pointer-events:auto;box-shadow:0 14px 44px rgba(0,0,0,.62);transition:width .24s cubic-bezier(.2,.75,.25,1),border-color .12s,box-shadow .12s}
 .cameraWindow.postit-active{width:min(910px,calc(100vw - 24px))}

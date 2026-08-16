@@ -14,8 +14,9 @@
 <script>
 // Front heberge separement du back (Vercel, CDN) : renseigner l'URL de l'API.
 // Laisser vide quand le front est servi par le serveur Python lui-meme.
-window.CARTE_API = "https://carte-cameras-live.onrender.com";
-  window.CARTE_TOKEN = "RnXEqvKmJ6NPQC6sGCkzDFTMp2TtHdJ9";
+const CARTE_LOCALE = /^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(location.hostname);
+window.CARTE_API = CARTE_LOCALE ? "" : "https://carte-cameras-live.onrender.com";
+window.CARTE_TOKEN = CARTE_LOCALE ? "" : "RnXEqvKmJ6NPQC6sGCkzDFTMp2TtHdJ9";
 </script></head><body>
 <div id="map"></div>
 <div class="rail">
@@ -56,14 +57,13 @@ window.CARTE_API = "https://carte-cameras-live.onrender.com";
   <div class="pane" data-pane="sources">
     <div class="stat">
       <div><b id="sEv">...</b><span>Evenements</span></div>
-      <div><b id="sE">...</b><span>USA (live)</span></div>
       <div><b id="sS">...</b><span>Skyline</span></div>
-      <div><b id="sX">...</b><span>WebCamTaxi</span></div>
       <div><b id="sH">...</b><span>WebcamHopper</span></div>
       <div><b id="sW">...</b><span>WhatsUpCams</span></div>
       <div><b id="sT">...</b><span>Londres</span></div>
       <div><b id="sF">...</b><span>Finlande</span></div>
       <div><b id="sNY">0</b><span>New York</span></div>
+      <div><b id="sWin">...</b><span>Windy</span></div>
       <div><b id="sC">...</b><span>Cables</span></div>
     </div>
   </div>
@@ -109,13 +109,12 @@ window.CARTE_API = "https://carte-cameras-live.onrender.com";
   </div>
   <div class="pane" data-pane="legend">
     <div class="legend">
-      <span><b style="background:var(--blue)"></b>USA (live)</span>
       <span><b style="background:var(--blue)"></b>Skyline (video)</span>
-      <span><b style="background:var(--blue)"></b>WebCamTaxi (video)</span>
       <span><b style="background:var(--blue)"></b>WebcamHopper (video)</span>
       <span><b style="background:var(--blue)"></b>WhatsUpCams (video)</span>
       <span><b style="background:var(--blue)"></b>Londres trafic (video)</span>
       <span><b style="background:var(--teal)"></b>Finlande (image)</span>
+      <span><b style="background:#b06bff"></b>Windy (image actualisee)</span>
       <span><b style="background:#39c">~</b>Cables</span>
     </div>
   </div>

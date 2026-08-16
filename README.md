@@ -6,9 +6,10 @@ modèle de langage.
 
 ## Ce que ça fait
 
-**Carte** — agrège des caméras publiques de huit sources (SkylineWebcams, WebCamTaxi,
-WebcamHopper, WhatsUpCams, TfL Londres, Fintraffic Finlande, 511NY, EarthCam), plus les
-câbles sous-marins et les événements des dernières 24 h (ACLED, GDELT, GDACS, USGS, NASA FIRMS).
+**Carte** — agrège des caméras publiques de sept sources (SkylineWebcams, WebcamHopper,
+WhatsUpCams, TfL Londres, Fintraffic Finlande, 511NY et Windy Webcams), plus les câbles
+sous-marins et les événements des dernières 24 h (ACLED, GDELT, GDACS, USGS, NASA FIRMS).
+Les sources qui aboutissent à YouTube ne sont pas intégrées.
 
 **Géolocalisation de photo** — chaîne à trois étages :
 
@@ -48,9 +49,17 @@ cp keys.example.json keys.json     # puis renseigner au moins vlm_key
 python earthcam_live_map.py
 ```
 
-La carte et les caméras fonctionnent sans aucune clé. L'assistant demande une clé API
-gratuite ; l'analyse de photo demande en plus PyTorch CUDA, GeoCLIP et RapidOCR
-(lignes commentées de `requirements.txt`).
+Les cinq catalogues principaux fonctionnent sans clé (511NY reste optionnel). Une clé
+Webcams API gratuite active Windy ; le collecteur évite la troncature des grands pays
+par un découpage géographique et conserve un cache local dédupliqué. Pour forcer une
+extraction complète :
+
+```bash
+python earthcam_live_map.py --extract-windy
+```
+
+L'assistant demande une clé API gratuite ; l'analyse de photo demande en plus PyTorch CUDA,
+GeoCLIP et RapidOCR (lignes commentées de `requirements.txt`).
 
 ## Architecture
 

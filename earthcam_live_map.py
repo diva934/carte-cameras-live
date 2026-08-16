@@ -5,6 +5,7 @@ Live Public Cam Map — vraies cameras publiques temps reel (reseaux ouverts, sa
   - WhatsUpCams : webcams video HLS (Europe)
   - TfL JamCams : ~880 cameras trafic de Londres (video MP4)
   - Fintraffic Digitraffic : ~810 cameras route/meteo de Finlande (images HD)
+  - Windy Webcams : catalogue mondial d'images actualisees
   - Cables de telecommunication sous-marins (TeleGeography)
 Detection YOLO26 + ByteTrack dans un post-it superpose a la video.
 
@@ -21,6 +22,7 @@ WUC_CACHE_FILE = "whatsupcams.json"
 SKY_CACHE_FILE = "skylinewebcams.json"
 TAXI_CACHE_FILE = "webcamtaxi.json"
 HOPPER_CACHE_FILE = "webcamhopper.json"
+WINDY_CACHE_FILE = "windy_webcams.json"
 PLANES_CACHE_FILE = "planes.json"
 PLANES_USAGE_FILE = "planes_usage.json"
 AIRPORTS_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "airports_major.json")
@@ -54,6 +56,8 @@ EARTH = {"cams": [], "updated": 0, "error": None}
 SKY = {"cams": [], "updated": 0, "error": None}
 TAXI = {"cams": [], "updated": 0, "error": None}
 HOPPER = {"cams": [], "updated": 0, "error": None}
+WINDY = {"cams": [], "updated": 0, "error": None, "complete": False,
+         "progress": None}
 NYDOT = {"cams": [], "updated": 0, "error": None}
 NYDOT_CACHE_FILE = "nysdot_cams.json"
 PLANES = {"list": [], "updated": 0, "error": None, "source": "", "retry_at": 0, "center": [50.0, 8.0]}
@@ -277,11 +281,16 @@ def _load(path, default):
         return default
 
 def _save(path, data):
+    tmp = "%s.%s.tmp" % (path, threading.get_ident())
     try:
-        with open(path, "w", encoding="utf-8") as f:
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, path)
     except Exception:
-        pass
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
 
 GEOCACHE = _load(GEOCACHE_FILE, {})
 
@@ -1702,6 +1711,192 @@ def cables_load():
             time.sleep(60)
 
 
+# ---------------- Windy Webcams (API officielle, images actualisees) ----------------
+# L'offre gratuite limite chaque requete a 50 resultats et l'offset a 1000. Un
+# simple parcours par pays tronquait donc les pays les plus fournis. Le catalogue
+# est maintenant decoupe en tuiles geographiques, elles-memes subdivisees si elles
+# contiennent plus de 1050 cameras. Toutes les requetes restent dans les limites
+# documentees de l'API et les doublons de bordure sont elimines par webcamId.
+WINDY_API = "https://api.windy.com/webcams/api/v3/webcams"
+WINDY_PAGE_SIZE = 50
+WINDY_MAX_RESULTS = 1050
+
+
+def windy_cache(value):
+    """Normalise l'ancien cache (liste) et le nouveau snapshot versionne."""
+    if isinstance(value, list):
+        return {"cams": value, "updated": 0, "complete": False,
+                "expected": None, "error": None}
+    if isinstance(value, dict) and isinstance(value.get("cams"), list):
+        return value
+    return {"cams": [], "updated": 0, "complete": False,
+            "expected": None, "error": None}
+
+
+def _windy_get(params, key, timeout=35):
+    url = WINDY_API + "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={
+        "x-windy-api-key": key, "User-Agent": UA, "Accept": "application/json"})
+    last = None
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8", "replace"))
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code not in (429, 500, 502, 503, 504) or attempt == 3:
+                raise
+            try:
+                delay = float(e.headers.get("Retry-After") or 0)
+            except (TypeError, ValueError):
+                delay = 0
+            time.sleep(max(delay, 2 ** attempt))
+        except (OSError, TimeoutError) as e:
+            last = e
+            if attempt == 3:
+                raise
+            time.sleep(2 ** attempt)
+    raise last or RuntimeError("Windy indisponible")
+
+
+def _windy_bbox_text(bbox):
+    north, east, south, west = bbox
+    return ",".join("%.7f" % x for x in (north, east, south, west))
+
+
+def _windy_camera(raw):
+    wid = raw.get("webcamId")
+    location = raw.get("location") or {}
+    lat, lng = location.get("latitude"), location.get("longitude")
+    if wid is None or lat is None or lng is None or raw.get("status") == "inactive":
+        return None
+    player = raw.get("player") or {}
+    images = raw.get("images") or {}
+    current = images.get("current") or {}
+    image = current.get("preview") or current.get("thumbnail") or current.get("icon") or ""
+    embed = player.get("live") or player.get("day") or player.get("month") or ""
+    if not image and not embed:
+        return None
+    return {
+        "id": "w" + str(wid), "src": "windy",
+        "title": str(raw.get("title") or "Webcam").strip(),
+        "place": ", ".join(x for x in (location.get("city"), location.get("country")) if x),
+        "lat": float(lat), "lng": float(lng), "url": embed, "img": image,
+    }
+
+
+def _windy_collect_bbox(key, bbox, depth=0):
+    params = {"bbox": _windy_bbox_text(bbox), "limit": WINDY_PAGE_SIZE,
+              "offset": 0, "include": "location,player,images"}
+    first = _windy_get(params, key)
+    total = int(first.get("total") or 0)
+    if total > WINDY_MAX_RESULTS:
+        if depth >= 14:
+            raise RuntimeError("tuile Windy encore trop dense apres subdivision (%d)" % total)
+        north, east, south, west = bbox
+        if (east - west) >= (north - south):
+            middle = (east + west) / 2.0
+            children = ((north, middle, south, west),
+                        (north, east, south, middle))
+        else:
+            middle = (north + south) / 2.0
+            children = ((north, east, middle, west),
+                        (middle, east, south, west))
+        out = []
+        for child in children:
+            out.extend(_windy_collect_bbox(key, child, depth + 1))
+        return out
+    out = list(first.get("webcams") or [])
+    offset = WINDY_PAGE_SIZE
+    while offset < total:
+        params["offset"] = offset
+        page = _windy_get(params, key)
+        webcams = page.get("webcams") or []
+        if not webcams:
+            break
+        out.extend(webcams)
+        offset += len(webcams)
+    return out
+
+
+def windy_extract(key, cached=None):
+    """Extrait le catalogue mondial complet et conserve le cache des tuiles en erreur."""
+    cached = list(cached or [])
+    expected_data = _windy_get({"limit": 1}, key)
+    expected = int(expected_data.get("total") or 0)
+    found, failed = {}, []
+    # Les dimensions restent sous les maxima documentes pour une bbox de niveau 4.
+    roots = []
+    for south in (-90.0, -67.5, -45.0, -22.5, 0.0, 22.5, 45.0, 67.5):
+        for west in (-180.0, -135.0, -90.0, -45.0, 0.0, 45.0, 90.0, 135.0):
+            roots.append((min(90.0, south + 22.5), min(180.0, west + 45.0), south, west))
+    for index, bbox in enumerate(roots, 1):
+        try:
+            for raw in _windy_collect_bbox(key, bbox):
+                cam = _windy_camera(raw)
+                if cam:
+                    found[cam["id"]] = cam
+        except Exception as e:
+            failed.append((bbox, str(e)))
+            north, east, south, west = bbox
+            for cam in cached:
+                try:
+                    if south <= float(cam["lat"]) <= north and west <= float(cam["lng"]) <= east:
+                        found[str(cam.get("id"))] = cam
+                except (KeyError, TypeError, ValueError):
+                    pass
+        if index % 4 == 0 or index == len(roots):
+            partial = sorted(found.values(), key=lambda cam: str(cam.get("id")))
+            with LOCK:
+                WINDY.update({"cams": partial, "updated": int(time.time()),
+                              "progress": {"done": index, "total": len(roots),
+                                           "expected": expected},
+                              "error": ("%d tuiles en erreur" % len(failed)) if failed else None})
+            _save(WINDY_CACHE_FILE, {"version": 2, "cams": partial,
+                                    "updated": int(time.time()), "complete": False,
+                                    "expected": expected,
+                                    "error": WINDY.get("error")})
+            print("[Windy] extraction %d/%d tuiles, %d cameras" %
+                  (index, len(roots), len(partial)))
+    out = sorted(found.values(), key=lambda cam: str(cam.get("id")))
+    # "expected" est le total brut Windy. Les entrees inactives, sans position ou
+    # sans media sont volontairement ecartees : le scan est tout de meme complet.
+    complete = not failed
+    snapshot = {"version": 2, "cams": out, "updated": int(time.time()),
+                "complete": complete, "expected": expected,
+                "error": ("%d tuiles en erreur" % len(failed)) if failed else None}
+    _save(WINDY_CACHE_FILE, snapshot)
+    return snapshot
+
+
+def windy_loop():
+    key = KEYS.get("windy")
+    if not key:
+        print("[Windy] pas de cle (keys.json 'windy') -> couche inactive")
+        return
+    snapshot = windy_cache(_load(WINDY_CACHE_FILE, []))
+    if snapshot["cams"]:
+        with LOCK:
+            WINDY.update(snapshot)
+        print("[Windy] %d cameras (cache)" % len(snapshot["cams"]))
+    while True:
+        age = time.time() - float(snapshot.get("updated") or 0)
+        if snapshot.get("complete") and age < 7 * 24 * 3600:
+            time.sleep(max(60, 7 * 24 * 3600 - age))
+            continue
+        try:
+            snapshot = windy_extract(key, snapshot.get("cams"))
+            with LOCK:
+                WINDY.update(snapshot); WINDY["progress"] = None
+            print("[Windy] %d cameras extraites (complet=%s, attendu=%s)" %
+                  (len(snapshot["cams"]), snapshot["complete"], snapshot.get("expected")))
+        except Exception as e:
+            with LOCK:
+                WINDY["error"] = str(e); WINDY["progress"] = None
+            print("[Windy] erreur:", e)
+        time.sleep(7 * 24 * 3600 if snapshot.get("complete") else 900)
+
+
 # ---------------- NYSDOT (511NY) : cameras trafic New York en LIVE VIDEO HLS (cle gratuite) ----------------
 def nydot_loop():
     key = KEYS.get("ny511")
@@ -2163,9 +2358,9 @@ def cameras_near(lat, lng, km=30, limit=6):
     permet de comparer la scene en direct. Personne d'autre ne peut faire ca."""
     out = []
     with LOCK:
-        catalogues = (("USA (live)", EARTH), ("Skyline", SKY), ("WebCamTaxi", TAXI),
-                      ("WebcamHopper", HOPPER), ("WhatsUpCams", WUC), ("Londres", TFL),
-                      ("Finlande", FIN), ("New York", NYDOT))
+        catalogues = (("Skyline", SKY), ("WebcamHopper", HOPPER),
+                      ("WhatsUpCams", WUC), ("Londres", TFL), ("Finlande", FIN),
+                      ("New York", NYDOT), ("Windy", WINDY))
         for label, state in catalogues:
             for c in list(state["cams"]):
                 try:
@@ -2485,7 +2680,8 @@ def batch_run(folder, options):
 CATALOGUES = (("skyline", "SkylineWebcams", "SKY"),
               ("hopper", "WebcamHopper", "HOPPER"),
               ("hls", "WhatsUpCams", "WUC"), ("video", "Londres trafic", "TFL"),
-              ("img", "Finlande", "FIN"), ("nydot", "New York trafic", "NYDOT"))
+              ("img", "Finlande", "FIN"), ("nydot", "New York trafic", "NYDOT"),
+              ("windy", "Windy Webcams", "WINDY"))
 
 
 def _sans_accents(texte):
@@ -2734,6 +2930,11 @@ def resolve_camera_stream(src, url, cam_id=None, profondeur=0):
         return None, None, None
     if _est_youtube(url) or src in ("youtube", "earthcam"):
         return None, None, None                 # YouTube retire de l'application
+    if src == "windy":
+        with LOCK:
+            cam = next((c for c in WINDY["cams"] if str(c.get("id")) == str(cam_id)), None)
+        image = str((cam or {}).get("img") or "")
+        return ("image", image, None) if image else (None, None, None)
     if low.endswith((".jpg", ".jpeg", ".png", ".webp")):
         return "image", url, None
     if low.endswith((".mp4", ".m3u8")):
@@ -3253,6 +3454,9 @@ class Handler(BaseHTTPRequestHandler):
                     "hls": {"count": len(WUC["cams"]), "updated": WUC["updated"]},
                     "video": {"count": len(TFL["cams"]), "updated": TFL["updated"]},
                     "img": {"count": len(FIN["cams"]), "updated": FIN["updated"]},
+                    "windy": {"count": len(WINDY["cams"]), "updated": WINDY["updated"],
+                              "complete": WINDY.get("complete", False),
+                              "progress": WINDY.get("progress"), "error": WINDY.get("error")},
                 }
             self._send_json(200, {"sources": sources})
         elif self.path.startswith("/api/whatsupcams"):
@@ -3327,6 +3531,8 @@ class Handler(BaseHTTPRequestHandler):
                            "application/json; charset=utf-8")
         elif self.path.startswith("/api/webcamhopper"):
             self._send_state(HOPPER)
+        elif self.path.startswith("/api/windy"):
+            self._send_state(WINDY)
         elif self.path.startswith("/api/nydot"):
             self._send_state(NYDOT)
         elif self.path.startswith("/api/planes"):
@@ -3635,6 +3841,7 @@ def main():
         TAXI["cams"] = _load(TAXI_CACHE_FILE, [])
         HOPPER["cams"] = _load(HOPPER_CACHE_FILE, [])
         NYDOT["cams"] = _load(NYDOT_CACHE_FILE, [])
+        WINDY.update(windy_cache(_load(WINDY_CACHE_FILE, [])))
     if ROLE == "worker":
         print("MODE POSTE DE CALCUL : traitements GPU uniquement, aucun collecteur")
         if photo_osint is not None:
@@ -3651,6 +3858,7 @@ def main():
     threading.Thread(target=fin_loop, daemon=True).start()
     threading.Thread(target=skyline_loop, daemon=True).start()
     threading.Thread(target=webcam_hopper_loop, daemon=True).start()
+    threading.Thread(target=windy_loop, daemon=True).start()
     threading.Thread(target=nydot_loop, daemon=True).start()
     estore_boot()  # recharge les evenements des dernieres 24h (survit au redemarrage)
     threading.Thread(target=events_loop, daemon=True).start()
@@ -3711,4 +3919,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--extract-windy" in sys.argv:
+        cache = windy_cache(_load(WINDY_CACHE_FILE, []))
+        if not KEYS.get("windy"):
+            raise SystemExit("Cle Windy absente de keys.json")
+        result = windy_extract(KEYS["windy"], cache.get("cams"))
+        print("[Windy] resultat: %d/%s cameras, complet=%s, erreur=%s" %
+              (len(result["cams"]), result.get("expected"), result.get("complete"),
+               result.get("error")))
+    else:
+        main()

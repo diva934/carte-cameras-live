@@ -71,10 +71,11 @@ const gW=L.markerClusterGroup(clusterOptions('#2f81f7')).addTo(map);
 const gT=L.markerClusterGroup(clusterOptions('#2f81f7')).addTo(map);
 const gF=L.markerClusterGroup(clusterOptions('#22d3a6')).addTo(map);
 const gNY=L.markerClusterGroup(clusterOptions('#ff5a5f')).addTo(map);
+const gWin=L.markerClusterGroup(clusterOptions('#b06bff')).addTo(map);
 const cableLayer=L.layerGroup().addTo(map);
 const eventLayer=L.layerGroup().addTo(map);
 const icon=(cls)=>L.divIcon({className:'',html:'<div class="cam '+cls+'"></div>',iconSize:[12,12],iconAnchor:[6,6]});
-let DATA={skyline:[],hopper:[],hls:[],video:[],img:[],nydot:[]},markers={},q="";
+let DATA={skyline:[],hopper:[],hls:[],video:[],img:[],nydot:[],windy:[]},markers={},q="";
 const DATA_VERSION={},LAYER_TOKEN={};
 const SOURCE_META={
   skyline:{route:'skyline',stat:'sS',layer:gS,cls:'skyline'},
@@ -82,7 +83,8 @@ const SOURCE_META={
   hls:{route:'whatsupcams',stat:'sW',layer:gW,cls:'hls'},
   video:{route:'tfl',stat:'sT',layer:gT,cls:'video'},
   img:{route:'finland',stat:'sF',layer:gF,cls:'img'},
-  nydot:{route:'nydot',stat:'sNY',layer:gNY,cls:'nydot'}
+  nydot:{route:'nydot',stat:'sNY',layer:gNY,cls:'nydot'},
+  windy:{route:'windy',stat:'sWin',layer:gWin,cls:'windy'}
 };
 const cameraDesk=document.getElementById('cameraDesk'),cameraWindows=new Map();
 let cameraSerial=0,cameraZ=2000,ytReady=false,ytQ=[],activePersonTrackingState=null;
@@ -409,9 +411,52 @@ function enableRegionZoom(container){
 function setCameraMessage(state,message){if(!state.closed)state.vid.innerHTML='<div class="msg">'+message+'</div>';}
 function openCameraStream(state){
   const c=state.cam,mVid=state.vid;
-  if(c.src==='youtube'){
-    mVid.innerHTML='<div class="msg">Source YouTube retiree</div>';
-    return;
+  if(c.src==='windy'){
+    if(c.img){
+      mVid.innerHTML='<img>';
+      const iv=mVid.querySelector('img'),load=()=>{if(!state.closed)iv.src=c.img+(c.img.includes('?')?'&':'?')+'_t='+Date.now();};
+      load();state.imgTimer=setInterval(load,10000);
+    }else if(c.url){
+      mVid.innerHTML='<iframe allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>';
+      mVid.querySelector('iframe').src=c.url;
+    }else setCameraMessage(state,'Camera hors ligne.');
+  } else if(c.src==='hopper'){
+    setCameraMessage(state,'Connexion au flux WebcamHopper...');
+    fetch(api('/api/webcamhopper-stream?id=')+encodeURIComponent(c.id)+'&url='+encodeURIComponent(c.url),{cache:'no-store'}).then(r=>r.json()).then(j=>{
+      if(state.closed)return;if(!j.ok||!j.url){setCameraMessage(state,'Camera hors ligne ou source YouTube retiree.');return;}
+      if(j.kind==='hls'){
+        mVid.innerHTML='<video autoplay muted playsinline controls></video>';
+        attachHls(state,mVid.querySelector('video'),j.url);return;
+      }
+      if(j.kind==='video'){mVid.innerHTML='<video autoplay muted loop playsinline controls></video>';mVid.querySelector('video').src=j.url;return;}
+      mVid.innerHTML='<iframe allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>';
+      mVid.querySelector('iframe').src=j.url;
+    }).catch(()=>setCameraMessage(state,'Camera hors ligne.'));
+  } else if(c.src==='skyline'){
+    setCameraMessage(state,'Connexion au flux SkylineWebcams...');
+    fetch(api('/api/skyline-stream?url=')+encodeURIComponent(c.url),{cache:'no-store'}).then(r=>r.json()).then(j=>{
+      if(state.closed)return;if(!j.ok||!j.url){setCameraMessage(state,'Camera hors ligne.');return;}
+      mVid.innerHTML='<video autoplay muted playsinline controls></video>';
+      attachHls(state,mVid.querySelector('video'),j.url);
+    }).catch(()=>setCameraMessage(state,'Camera hors ligne.'));
+  } else if(c.src==='hls'){
+    setCameraMessage(state,'Recherche du flux live...');
+    resolveHls(c.id).then(url=>{
+      if(state.closed)return;if(!url){setCameraMessage(state,'Camera hors ligne.');return;}
+      mVid.innerHTML='<video autoplay muted playsinline controls></video>';
+      attachHls(state,mVid.querySelector('video'),url);
+    });
+  } else if(c.src==='video'){
+    mVid.innerHTML='<video autoplay muted loop playsinline controls></video>';mVid.querySelector('video').src=c.url;
+  } else if(c.src==='nydot'){
+    mVid.innerHTML='<video autoplay muted playsinline controls></video>';
+    attachHls(state,mVid.querySelector('video'),c.url);
+  } else if(c.src==='img'){
+    mVid.innerHTML='<img>';
+    const iv=mVid.querySelector('img'),load=()=>{if(!state.closed)iv.src=c.url+(c.url.includes('?')?'&':'?')+'_t='+Date.now();};
+    load();state.imgTimer=setInterval(load,3000);
+  } else {
+    setCameraMessage(state,'Source non prise en charge.');
   }
 }
 function openCam(c){
@@ -519,10 +564,10 @@ function prepareCams(cams){
   return cams;
 }
 function render(){
-  const all=DATA.skyline.concat(DATA.hopper,DATA.hls,DATA.video,DATA.img,DATA.nydot);
+  const all=DATA.skyline.concat(DATA.hopper,DATA.hls,DATA.video,DATA.img,DATA.nydot,DATA.windy);
   const shown=all.filter(c=>!q||c._search.includes(q));
   const list=document.getElementById('list'),fragment=document.createDocumentFragment();
-  const col={skyline:'var(--blue)',hopper:'var(--blue)',hls:'var(--blue)',video:'var(--blue)',img:'var(--teal)',nydot:'#ff5a5f'};
+  const col={skyline:'var(--blue)',hopper:'var(--blue)',hls:'var(--blue)',video:'var(--blue)',img:'var(--teal)',nydot:'#ff5a5f',windy:'#b06bff'};
   shown.slice(0,400).forEach(c=>{
     const d=document.createElement('div');d.className='item';
     const led=document.createElement('span'),body=document.createElement('div'),title=document.createElement('b'),place=document.createElement('span');
