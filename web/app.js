@@ -74,12 +74,10 @@ const gNY=L.markerClusterGroup(clusterOptions('#ff5a5f')).addTo(map);
 const cableLayer=L.layerGroup().addTo(map);
 const eventLayer=L.layerGroup().addTo(map);
 const icon=(cls)=>L.divIcon({className:'',html:'<div class="cam '+cls+'"></div>',iconSize:[12,12],iconAnchor:[6,6]});
-let DATA={youtube:[],skyline:[],taxi:[],hopper:[],hls:[],video:[],img:[],nydot:[]},markers={},q="";
+let DATA={skyline:[],hopper:[],hls:[],video:[],img:[],nydot:[]},markers={},q="";
 const DATA_VERSION={},LAYER_TOKEN={};
 const SOURCE_META={
-  youtube:{route:'earthcam',stat:'sE',layer:gE,cls:'youtube'},
   skyline:{route:'skyline',stat:'sS',layer:gS,cls:'skyline'},
-  taxi:{route:'webcamtaxi',stat:'sX',layer:gX,cls:'taxi'},
   hopper:{route:'webcamhopper',stat:'sH',layer:gH,cls:'hopper'},
   hls:{route:'whatsupcams',stat:'sW',layer:gW,cls:'hls'},
   video:{route:'tfl',stat:'sT',layer:gT,cls:'video'},
@@ -112,8 +110,8 @@ const city3dBuildingLayer={id:'city3d-buildings',source:'city3d-vector','source-
     'fill-extrusion-opacity':1,'fill-extrusion-opacity-transition':{duration:0,delay:0},
     'fill-extrusion-vertical-gradient':true
   }};
-window.onYouTubeIframeAPIReady=function(){ytReady=true;ytQ.forEach(f=>{try{f();}catch(e){}});ytQ=[];};
-(function(){var t=document.createElement('script');t.src='https://www.youtube.com/iframe_api';document.head.appendChild(t);})();
+
+
 
 function city3dLayerBefore(m){
   const layers=(m.getStyle()&&m.getStyle().layers)||[];
@@ -366,10 +364,6 @@ function attachHls(state,video,url){
     else{hls.destroy();state.hls=null;}
   });
 }
-function revealYoutube(state){
-  if(state.ytRevealTimer)clearTimeout(state.ytRevealTimer);
-  state.ytRevealTimer=setTimeout(()=>{if(state.closed)return;const wrap=state.vid.querySelector('.ytclean.waiting');if(!wrap)return;wrap.classList.remove('waiting');const wait=wrap.querySelector('.ytwait');if(wait)wait.remove();state.ytRevealTimer=null;},5000);
-}
 async function resolveHls(id){
   const cd=[];for(let i=1;i<=10;i++)cd.push('cdn-'+String(i).padStart(3,'0'));
   const t=cd.map(c=>fetch('https://'+c+'.whatsupcams.com/hls/'+id+'.m3u8',{cache:'no-store'}).then(r=>r.status===200?r.text().then(x=>x.includes('#EXTM3U')?'https://'+c+'.whatsupcams.com/hls/'+id+'.m3u8':null):null).catch(()=>null));
@@ -416,58 +410,8 @@ function setCameraMessage(state,message){if(!state.closed)state.vid.innerHTML='<
 function openCameraStream(state){
   const c=state.cam,mVid=state.vid;
   if(c.src==='youtube'){
-    mVid.innerHTML='<div class="ytclean waiting"><div class="ytp"></div><div class="ytblock"></div><div class="msg ytwait">Connexion au flux en direct...</div></div>';
-    const host=mVid.querySelector('.ytp');
-    const make=()=>{if(state.closed||!host.isConnected)return;state.ytPlayer=new YT.Player(host,{videoId:c.id,width:'100%',height:'100%',playerVars:{autoplay:1,mute:1,controls:0,modestbranding:1,rel:0,iv_load_policy:3,fs:0,disablekb:1,playsinline:1,showinfo:0},events:{onReady:e=>{e.target.playVideo();revealYoutube(state);}}});};
-    if(ytReady&&window.YT&&YT.Player){make();}else{ytQ.push(make);}
-  } else if(c.src==='hopper'){
-    setCameraMessage(state,'Connexion au flux WebcamHopper...');
-    fetch(api('/api/webcamhopper-stream?id=')+encodeURIComponent(c.id)+'&url='+encodeURIComponent(c.url),{cache:'no-store'}).then(r=>r.json()).then(j=>{
-      if(state.closed)return;if(!j.ok||!j.url){setCameraMessage(state,'Camera hors ligne.');return;}
-      if(j.kind==='hls'){
-        mVid.innerHTML='<video autoplay muted playsinline controls></video>';
-        attachHls(state,mVid.querySelector('video'),j.url);return;
-      }
-      if(j.kind==='video'){mVid.innerHTML='<video autoplay muted loop playsinline controls></video>';mVid.querySelector('video').src=j.url;return;}
-      let source=j.url,isYoutube=false;
-      try{const u=new URL(source);isYoutube=u.hostname.includes('youtube.com')||u.hostname.includes('youtube-nocookie.com')||u.hostname==='youtu.be';if(isYoutube){u.searchParams.set('autoplay','1');u.searchParams.set('mute','1');u.searchParams.set('controls','0');u.searchParams.set('modestbranding','1');u.searchParams.set('rel','0');u.searchParams.set('iv_load_policy','3');u.searchParams.set('fs','0');u.searchParams.set('disablekb','1');u.searchParams.set('playsinline','1');source=u.toString();}}catch(e){}
-      if(isYoutube){mVid.innerHTML='<div class="ytclean waiting"><iframe allow="autoplay; encrypted-media; picture-in-picture"></iframe><div class="ytblock"></div><div class="msg ytwait">Connexion au flux en direct...</div></div>';}
-      else{mVid.innerHTML='<iframe allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>';}
-      const frame=mVid.querySelector('iframe');if(isYoutube)frame.onload=()=>revealYoutube(state);frame.src=source;
-    }).catch(()=>setCameraMessage(state,'Camera hors ligne.'));
-  } else if(c.src==='taxi'){
-    setCameraMessage(state,'Connexion au flux WebCamTaxi...');
-    fetch(api('/api/webcamtaxi-stream?url=')+encodeURIComponent(c.url),{cache:'no-store'}).then(r=>r.json()).then(j=>{
-      if(state.closed)return;if(!j.ok||!j.url){setCameraMessage(state,'Camera hors ligne.');return;}
-      let source=j.url,isYoutube=false;
-      try{const u=new URL(source);isYoutube=u.hostname.includes('youtube.com')||u.hostname.includes('youtube-nocookie.com')||u.hostname==='youtu.be';if(isYoutube){u.searchParams.set('autoplay','1');u.searchParams.set('mute','1');u.searchParams.set('controls','0');u.searchParams.set('modestbranding','1');u.searchParams.set('rel','0');u.searchParams.set('iv_load_policy','3');u.searchParams.set('fs','0');u.searchParams.set('disablekb','1');u.searchParams.set('playsinline','1');source=u.toString();}}catch(e){}
-      if(isYoutube){mVid.innerHTML='<div class="ytclean waiting"><iframe allow="autoplay; encrypted-media; picture-in-picture"></iframe><div class="ytblock"></div><div class="msg ytwait">Connexion au flux en direct...</div></div>';}
-      else{mVid.innerHTML='<iframe allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>';}
-      const frame=mVid.querySelector('iframe');if(isYoutube)frame.onload=()=>revealYoutube(state);frame.src=source;
-    }).catch(()=>setCameraMessage(state,'Camera hors ligne.'));
-  } else if(c.src==='skyline'){
-    setCameraMessage(state,'Connexion au flux SkylineWebcams...');
-    fetch(api('/api/skyline-stream?url=')+encodeURIComponent(c.url),{cache:'no-store'}).then(r=>r.json()).then(j=>{
-      if(state.closed)return;if(!j.ok||!j.url){setCameraMessage(state,'Camera hors ligne.');return;}
-      mVid.innerHTML='<video autoplay muted playsinline controls></video>';
-      attachHls(state,mVid.querySelector('video'),j.url);
-    }).catch(()=>setCameraMessage(state,'Camera hors ligne.'));
-  } else if(c.src==='hls'){
-    setCameraMessage(state,'Recherche du flux live...');
-    resolveHls(c.id).then(url=>{
-      if(state.closed)return;if(!url){setCameraMessage(state,'Camera hors ligne.');return;}
-      mVid.innerHTML='<video autoplay muted playsinline controls></video>';
-      attachHls(state,mVid.querySelector('video'),url);
-    });
-  } else if(c.src==='video'){
-    mVid.innerHTML='<video autoplay muted loop playsinline controls></video>';mVid.querySelector('video').src=c.url;
-  } else if(c.src==='nydot'){
-    mVid.innerHTML='<video autoplay muted playsinline controls></video>';
-    attachHls(state,mVid.querySelector('video'),c.url);
-  } else if(c.src==='img'){
-    mVid.innerHTML='<img>';
-    const iv=mVid.querySelector('img'),load=()=>{if(!state.closed)iv.src=c.url+(c.url.includes('?')?'&':'?')+'_t='+Date.now();};
-    load();state.imgTimer=setInterval(load,3000);
+    mVid.innerHTML='<div class="msg">Source YouTube retiree</div>';
+    return;
   }
 }
 function openCam(c){
@@ -549,7 +493,7 @@ function attachPersonPostit(state,info){
 function launchDetect(state){
   if(!state||state.closed)return;const cam=state.cam,b=state.el.querySelector('.yolo');
   let q2='src='+cam.src;
-  if(cam.src==='hls'||cam.src==='youtube')q2+='&id='+encodeURIComponent(cam.id);
+  if(cam.src==='hls')q2+='&id='+encodeURIComponent(cam.id);
   else{q2+='&url='+encodeURIComponent(cam.url);if(cam.id!==undefined&&cam.id!==null)q2+='&id='+encodeURIComponent(cam.id);}
   b.textContent='Ouverture du post-it...';
   fetch(api('/detect?')+q2+'&title='+encodeURIComponent(cam.title)).then(r=>r.json()).then(j=>{
@@ -575,10 +519,10 @@ function prepareCams(cams){
   return cams;
 }
 function render(){
-  const all=DATA.youtube.concat(DATA.skyline,DATA.taxi,DATA.hopper,DATA.hls,DATA.video,DATA.img,DATA.nydot);
+  const all=DATA.skyline.concat(DATA.hopper,DATA.hls,DATA.video,DATA.img,DATA.nydot);
   const shown=all.filter(c=>!q||c._search.includes(q));
   const list=document.getElementById('list'),fragment=document.createDocumentFragment();
-  const col={youtube:'var(--blue)',skyline:'var(--blue)',taxi:'var(--blue)',hopper:'var(--blue)',hls:'var(--blue)',video:'var(--blue)',img:'var(--teal)',nydot:'#ff5a5f'};
+  const col={skyline:'var(--blue)',hopper:'var(--blue)',hls:'var(--blue)',video:'var(--blue)',img:'var(--teal)',nydot:'#ff5a5f'};
   shown.slice(0,400).forEach(c=>{
     const d=document.createElement('div');d.className='item';
     const led=document.createElement('span'),body=document.createElement('div'),title=document.createElement('b'),place=document.createElement('span');

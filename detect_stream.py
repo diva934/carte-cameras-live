@@ -255,22 +255,7 @@ def resolve_hls(cid):
 
 
 def resolve_youtube(vid):
-    try:
-        import yt_dlp
-    except Exception:
-        return None
-    opts = {"quiet": True, "skip_download": True, "nocheckcertificate": True,
-            "format": "best[height<=720]/best"}
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info("https://www.youtube.com/watch?v=%s" % vid, download=False)
-        if info.get("url"):
-            return info["url"]
-        for f in reversed(info.get("formats", []) or []):
-            if f.get("url"):
-                return f["url"]
-    except Exception as e:
-        print("yt-dlp:", e)
+    """YouTube retire de l'application : plus aucune resolution."""
     return None
 
 

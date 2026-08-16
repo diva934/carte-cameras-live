@@ -524,12 +524,17 @@ def webcam_taxi_catalog():
         found[path] = cam
     return list(found.values())
 
+def _est_youtube(url):
+    return bool(re.search(r"(?:^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)", str(url or ""), re.I))
+
+
 def webcam_taxi_embed(page_url):
+    """Retourne None si la page aboutit a YouTube : cette source est retiree."""
     if not page_url.startswith(TAXI_BASE + "en/") or not page_url.endswith(".html"):
-        return None
+        return None if _est_youtube(None) else None
     page = http_get(page_url, timeout=35)
     if re.search(r'<div class=offlineCam>', page, re.I):
-        return None
+        return None if _est_youtube(None) else None
     for tag in re.findall(r'<iframe\b[^>]*>', page, re.I):
         match = re.search(r'\bsrc=(?:"([^"]+)"|\'([^\']+)\'|([^\s>]+))', tag, re.I)
         if not match:
@@ -540,7 +545,7 @@ def webcam_taxi_embed(page_url):
             continue
         source = urllib.parse.urljoin(page_url, source)
         if urllib.parse.urlparse(source).scheme in ("http", "https"):
-            return source
+            return None if _est_youtube(source) else source
     return None
 
 def webcam_taxi_loop():
@@ -598,7 +603,7 @@ def webcam_hopper_index(url):
         r'<span class="pais-cnt">(\d+)</span>', re.I | re.S)
     for href, name, count in pattern.findall(section.group(1)):
         rows.append((urllib.parse.urljoin(url, href), _sky_text(name), int(count)))
-    return rows
+    return None if _est_youtube(rows) else rows
 
 def webcam_hopper_page(row):
     url, region, expected, country = row
@@ -631,7 +636,7 @@ def webcam_hopper_page(row):
             break
     if len(cams) != expected:
         raise RuntimeError("%s: %d/%d cameras" % (region, len(cams), expected))
-    return cams
+    return None if _est_youtube(cams) else cams
 
 def webcam_hopper_catalog():
     countries = webcam_hopper_index(HOPPER_COUNTRIES)
@@ -659,6 +664,11 @@ def webcam_hopper_catalog():
     return list(found.values())
 
 def _webcam_hopper_youtube(source):
+    """YouTube retire de l'application : cette resolution est neutralisee."""
+    return None if _est_youtube(None) else None
+
+
+def _webcam_hopper_youtube_desactive(source):
     parsed = urllib.parse.urlparse(source)
     host = (parsed.hostname or "").lower()
     if host not in ("youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"):
@@ -709,7 +719,7 @@ def page_video_source(page_url):
             return {"url": url, "kind": "video"}
         youtube = _webcam_hopper_youtube(url)
         if youtube:
-            return {"url": youtube, "kind": "youtube"}
+            return None                       # YouTube retire de l'application
     return None
 
 def webcam_hopper_stream(page_url, cam_id):
@@ -2472,8 +2482,8 @@ def batch_run(folder, options):
         BATCH["status"] = "done"
 
 
-CATALOGUES = (("youtube", "USA (live)", "EARTH"), ("skyline", "SkylineWebcams", "SKY"),
-              ("taxi", "WebCamTaxi", "TAXI"), ("hopper", "WebcamHopper", "HOPPER"),
+CATALOGUES = (("skyline", "SkylineWebcams", "SKY"),
+              ("hopper", "WebcamHopper", "HOPPER"),
               ("hls", "WhatsUpCams", "WUC"), ("video", "Londres trafic", "TFL"),
               ("img", "Finlande", "FIN"), ("nydot", "New York trafic", "NYDOT"))
 
@@ -2722,11 +2732,8 @@ def resolve_camera_stream(src, url, cam_id=None, profondeur=0):
     low = url.split("?", 1)[0].lower()
     if profondeur > 2:
         return None, None, None
-    m = re.search(r"(?:youtube\.com/embed/|youtube\.com/watch\?v=|youtu\.be/|[?&]v=)([\w-]{6,})", url)
-    if m or src in ("youtube", "earthcam"):
-        vid = m.group(1) if m else (cam_id or "")
-        direct = resolve_youtube_stream(vid) if re.match(r"^[\w-]{6,}$", vid or "") else None
-        return ("video", direct, None) if direct else (None, None, None)
+    if _est_youtube(url) or src in ("youtube", "earthcam"):
+        return None, None, None                 # YouTube retire de l'application
     if low.endswith((".jpg", ".jpeg", ".png", ".webp")):
         return "image", url, None
     if low.endswith((".mp4", ".m3u8")):
@@ -3071,9 +3078,8 @@ def detect_args_from_source(source):
     detect_stream.py, ou None si le flux n'est pas analysable (lecteur tiers opaque)."""
     if not source:
         return None
-    m = re.search(r"(?:youtube\.com/embed/|youtube\.com/watch\?v=|youtu\.be/|[?&]v=)([\w-]{6,})", source)
-    if m:
-        return ["youtube", m.group(1)]
+    if _est_youtube(source):
+        return None                              # YouTube retire de l'application
     if source.startswith(SKY_BASE + "en/webcam/") and source.endswith(".html"):
         return ["skyline", source]
     low = source.split("?", 1)[0].lower()
@@ -3241,9 +3247,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path.startswith("/api/status"):
             with LOCK:
                 sources = {
-                    "youtube": {"count": len(EARTH["cams"]), "updated": EARTH["updated"]},
                     "skyline": {"count": len(SKY["cams"]), "updated": SKY["updated"]},
-                    "taxi": {"count": len(TAXI["cams"]), "updated": TAXI["updated"]},
                     "hopper": {"count": len(HOPPER["cams"]), "updated": HOPPER["updated"]},
                     "nydot": {"count": len(NYDOT["cams"]), "updated": NYDOT["updated"]},
                     "hls": {"count": len(WUC["cams"]), "updated": WUC["updated"]},
@@ -3453,7 +3457,7 @@ class Handler(BaseHTTPRequestHandler):
                 url = p.get("url", [""])[0]
                 title = p.get("title", [cid or "cam"])[0][:70]
                 args = None
-                if src in ("hls", "youtube") and re.match(r"^[\w-]+$", cid or ""):
+                if src == "hls" and re.match(r"^[\w-]+$", cid or ""):
                     args = [src, cid, title]
                 elif src == "skyline" and url.startswith(SKY_BASE + "en/webcam/") and url.endswith(".html"):
                     args = [src, url, title]
@@ -3645,9 +3649,7 @@ def main():
     threading.Thread(target=wuc_loop, daemon=True).start()
     threading.Thread(target=tfl_loop, daemon=True).start()
     threading.Thread(target=fin_loop, daemon=True).start()
-    threading.Thread(target=earth_loop, daemon=True).start()
     threading.Thread(target=skyline_loop, daemon=True).start()
-    threading.Thread(target=webcam_taxi_loop, daemon=True).start()
     threading.Thread(target=webcam_hopper_loop, daemon=True).start()
     threading.Thread(target=nydot_loop, daemon=True).start()
     estore_boot()  # recharge les evenements des dernieres 24h (survit au redemarrage)
