@@ -180,7 +180,9 @@ body{display:block;overflow:hidden}
 .photoPin{background:transparent!important;border:0!important}
 .photoPin div{width:24px;height:24px;border-radius:50% 50% 50% 2px;transform:rotate(-45deg);background:var(--accent);border:2px solid #06090c;box-shadow:0 0 10px rgba(217,166,72,.6);display:flex;align-items:center;justify-content:center}
 .photoPin span{transform:rotate(45deg);color:#000;font:600 11px var(--mono)}
-.cam{border-radius:50%;width:12px;height:12px;border:2px solid #0a0e14}
+/* le marqueur garde 12 px a l'ecran, mais sa zone tactile est plus large */
+.camHit{display:flex;align-items:center;justify-content:center}
+.cam{border-radius:50%;width:12px;height:12px;border:2px solid #0a0e14;flex:0 0 auto}
 .cam.hls{background:var(--blue);box-shadow:0 0 0 2px #2f81f755,0 0 8px var(--blue)}
 .cam.video{background:var(--blue);box-shadow:0 0 0 2px #2f81f755,0 0 8px var(--blue)}
 .cam.img{background:var(--teal);box-shadow:0 0 0 2px #22d3a655,0 0 8px var(--teal)}

@@ -19,6 +19,8 @@ airports_major.json
 planes.json
 planes_usage.json
 earthcam_geocache.json
+events.json
+insecam.json
 
 # --- donnees produites a l'usage ---
 enquetes/

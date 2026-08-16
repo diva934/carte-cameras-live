@@ -74,7 +74,13 @@ const gNY=L.markerClusterGroup(clusterOptions('#ff5a5f')).addTo(map);
 const gWin=L.markerClusterGroup(clusterOptions('#b06bff')).addTo(map);
 const cableLayer=L.layerGroup().addTo(map);
 const eventLayer=L.layerGroup().addTo(map);
-const icon=(cls)=>L.divIcon({className:'',html:'<div class="cam '+cls+'"></div>',iconSize:[12,12],iconAnchor:[6,6]});
+// Au doigt, un point de 12 px est trop petit : le tap manque le marqueur, atterrit
+// sur la carte et ouvre la vue 3D au lieu de la camera. On elargit donc la zone
+// cliquable sur les ecrans tactiles ; le point reste visuellement identique.
+const TACTILE=window.matchMedia('(hover:none) and (pointer:coarse)').matches;
+const CIBLE=TACTILE?34:12;
+const icon=(cls)=>L.divIcon({className:'camHit',html:'<div class="cam '+cls+'"></div>',
+  iconSize:[CIBLE,CIBLE],iconAnchor:[CIBLE/2,CIBLE/2]});
 let DATA={skyline:[],hopper:[],hls:[],video:[],img:[],nydot:[],windy:[]},markers={},q="";
 const DATA_VERSION={},LAYER_TOKEN={};
 const SOURCE_META={
@@ -296,7 +302,24 @@ function openCity3D(lat,lng,zoom=17.45){
 }
 function closeCity3D(){document.getElementById('city3d').classList.remove('show');}
 document.getElementById('city3dClose').onclick=closeCity3D;
-map.on('click',e=>openCity3D(e.latlng.lat,e.latlng.lng));
+// Filet de securite tactile : un tap qui manque le marqueur de quelques pixels
+// tombait sur la carte et ouvrait la vue 3D. On rattrape la camera la plus proche.
+function cameraProche(point){
+  if(!TACTILE)return null;
+  let proche=null,mini=26;
+  for(const id in markers){
+    const m=markers[id];
+    if(!m._cam||!m._icon)continue;          // _icon absent = marqueur regroupe, non visible
+    const d=map.latLngToContainerPoint(m.getLatLng()).distanceTo(point);
+    if(d<mini){mini=d;proche=m._cam;}
+  }
+  return proche;
+}
+map.on('click',e=>{
+  const c=cameraProche(e.containerPoint);
+  if(c){openCam(c);return;}
+  openCity3D(e.latlng.lat,e.latlng.lng);
+});
 map.on('overlayadd overlayremove',()=>updateCity3dCameras());
 const city3dPreview=new URLSearchParams(location.search).get('city3d');
 if(city3dPreview){const p=city3dPreview.split(',').map(Number);if(p.length>=2&&p.every(Number.isFinite))setTimeout(()=>openCity3D(p[0],p[1],p[2]||17.45),100);}

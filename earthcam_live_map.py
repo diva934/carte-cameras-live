@@ -17,15 +17,27 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 PORT = int(os.environ.get("PORT") or os.environ.get("CARTE_PORT") or 8770)
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/125.0 Safari/537.36")
-GEOCACHE_FILE = "geocache.json"
-WUC_CACHE_FILE = "whatsupcams.json"
-SKY_CACHE_FILE = "skylinewebcams.json"
-TAXI_CACHE_FILE = "webcamtaxi.json"
-HOPPER_CACHE_FILE = "webcamhopper.json"
-WINDY_CACHE_FILE = "windy_webcams.json"
-PLANES_CACHE_FILE = "planes.json"
-PLANES_USAGE_FILE = "planes_usage.json"
-AIRPORTS_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "airports_major.json")
+DOSSIER = os.path.dirname(os.path.abspath(__file__))
+
+
+def _fichier(nom):
+    """Chemin d'un fichier de donnees, independant du dossier de lancement.
+
+    Sans cela, lancer le script depuis un autre dossier repart de zero : ni les
+    cles, ni les catalogues deja collectes ne sont retrouves.
+    """
+    return os.path.join(DOSSIER, nom)
+
+
+GEOCACHE_FILE = _fichier("geocache.json")
+WUC_CACHE_FILE = _fichier("whatsupcams.json")
+SKY_CACHE_FILE = _fichier("skylinewebcams.json")
+TAXI_CACHE_FILE = _fichier("webcamtaxi.json")
+HOPPER_CACHE_FILE = _fichier("webcamhopper.json")
+WINDY_CACHE_FILE = _fichier("windy_webcams.json")
+PLANES_CACHE_FILE = _fichier("planes.json")
+PLANES_USAGE_FILE = _fichier("planes_usage.json")
+AIRPORTS_CACHE_FILE = _fichier("airports_major.json")
 AIRPORTS_URL = "https://davidmegginson.github.io/ourairports-data/airports.csv"
 RUNWAYS_URL = "https://davidmegginson.github.io/ourairports-data/runways.csv"
 
@@ -59,7 +71,7 @@ HOPPER = {"cams": [], "updated": 0, "error": None}
 WINDY = {"cams": [], "updated": 0, "error": None, "complete": False,
          "progress": None}
 NYDOT = {"cams": [], "updated": 0, "error": None}
-NYDOT_CACHE_FILE = "nysdot_cams.json"
+NYDOT_CACHE_FILE = _fichier("nysdot_cams.json")
 PLANES = {"list": [], "updated": 0, "error": None, "source": "", "retry_at": 0, "center": [50.0, 8.0]}
 PLANES_VIEW = {"lat": 50.0, "lng": 8.0, "radius": 250.0, "active_until": 0, "version": 0}
 PLANES_USAGE = {"day": "", "airplanes_live": 0}
@@ -1266,8 +1278,8 @@ def article_location(article):
 EONET_URL = "https://eonet.gsfc.nasa.gov/api/v3/events?status=open&days=2&limit=80"
 GDACS_URL = "https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP"
 USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson"
-ESTORE_FILE = "events.json"
-KEYS = _load("keys.json", {}) or {}          # {"firms":"...","acled_key":"...","acled_email":"..."}
+ESTORE_FILE = _fichier("events.json")
+KEYS = _load(_fichier("keys.json"), {}) or {}       # {"firms":"...","acled_key":"...","acled_email":"..."}
 ESTORE = {}                                   # id -> evenement (avec _first/_seen/_tag)
 EVENT_TTL = 86400                             # un evenement reste 24h apres sa 1re detection
 
