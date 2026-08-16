@@ -33,6 +33,28 @@ le reste du site (carte, caméras, assistant, événements) marche en permanence
 Sans variable d'environnement, **rien ne change** : `complet`, écoute sur `127.0.0.1`,
 aucun jeton demandé.
 
+## Les clés en hébergement
+
+`keys.json` n'est jamais versionné : sur un hébergeur, il n'existe donc pas. Les clés
+se donnent alors par variables d'environnement, dans le tableau de bord de l'hébergeur.
+Une variable renseignée l'emporte sur `keys.json`.
+
+| Variable | Remplace la clé | Sert à |
+|---|---|---|
+| `CARTE_VLM_KEY` | `vlm_key` | assistant et géolocalisation de photo |
+| `CARTE_WINDY_KEY` | `windy` | rafraîchir le catalogue Windy |
+| `CARTE_FIRMS_KEY` | `firms` | foyers d'incendie |
+| `CARTE_ACLED_KEY` / `CARTE_ACLED_EMAIL` | `acled_key` / `acled_email` | événements de conflit |
+| `CARTE_AIS_KEY` | `aisstream` | navires |
+| `CARTE_NY511_KEY` | `ny511` | caméras trafic de New York |
+
+Le catalogue Windy voyage compressé dans le dépôt (`windy_webcams.json.gz`, 2,7 Mo
+pour 69 407 caméras) : un déploiement neuf les affiche immédiatement, sans clé. La clé
+ne sert qu'à le régénérer, une fois par semaine.
+
+**Mémoire.** Catalogues complets chargés, le serveur occupe environ 500 Mo. Une
+instance à 512 Mo est donc trop juste ; prévoir 1 Go.
+
 ## 1. Sur ton PC — le poste de calcul
 
 ```

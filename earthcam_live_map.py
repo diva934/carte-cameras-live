@@ -290,7 +290,31 @@ def _load(path, default):
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
+        pass
+    # Repli sur une version compressee : c'est ainsi que les gros catalogues
+    # voyagent dans le depot (20 Mo de JSON tiennent en 2,7 Mo) et sont donc
+    # disponibles des le premier demarrage d'un deploiement.
+    try:
+        import gzip
+        with gzip.open(path + ".gz", "rt", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
         return default
+
+CORPS_CACHE = {}          # id(catalogue) -> (version, corps gzip)
+CORPS_LOCK = threading.Lock()
+
+
+def _comprime(octets, seuil=4096):
+    """Version gzip d'un corps de reponse, ou None si ca n'en vaut pas la peine."""
+    if len(octets) < seuil:
+        return None
+    try:
+        import gzip
+        return gzip.compress(octets, 6)
+    except Exception:
+        return None
+
 
 def _save(path, data):
     tmp = "%s.%s.tmp" % (path, threading.get_ident())
@@ -1279,7 +1303,16 @@ EONET_URL = "https://eonet.gsfc.nasa.gov/api/v3/events?status=open&days=2&limit=
 GDACS_URL = "https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP"
 USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson"
 ESTORE_FILE = _fichier("events.json")
-KEYS = _load(_fichier("keys.json"), {}) or {}       # {"firms":"...","acled_key":"...","acled_email":"..."}
+KEYS = _load(_fichier("keys.json"), {}) or {}
+# En deploiement, keys.json n'existe pas : il n'est jamais versionne. Les cles
+# arrivent alors par variables d'environnement (tableau de bord de l'hebergeur).
+for _cle, _var in (("windy", "CARTE_WINDY_KEY"), ("vlm_key", "CARTE_VLM_KEY"),
+                   ("firms", "CARTE_FIRMS_KEY"), ("acled_key", "CARTE_ACLED_KEY"),
+                   ("acled_email", "CARTE_ACLED_EMAIL"), ("aisstream", "CARTE_AIS_KEY"),
+                   ("ny511", "CARTE_NY511_KEY")):
+    _valeur = (os.environ.get(_var) or "").strip()
+    if _valeur:
+        KEYS[_cle] = _valeur       # {"firms":"...","acled_key":"...","acled_email":"..."}
 ESTORE = {}                                   # id -> evenement (avec _first/_seen/_tag)
 EVENT_TTL = 86400                             # un evenement reste 24h apres sa 1re detection
 
@@ -3408,17 +3441,24 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _send(self, code, body, ctype):
-        self.send_response(code)
-        self._cors()
-        self.send_header("Content-Type", ctype)
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body.encode("utf-8"))
+        # Compresse au-dela de quelques Ko : les catalogues pesent plusieurs Mo
+        # (Windy : 20 Mo) et tombent a un dixieme, ce qui change tout en mobile.
+        brut = body.encode("utf-8")
+        comprime = None
+        if "gzip" in (self.headers.get("Accept-Encoding") or "").lower():
+            comprime = _comprime(brut)
+        if comprime is not None:
+            self._send_bytes(code, comprime, ctype, "gzip")
+        else:
+            self._send_bytes(code, brut, ctype)
 
-    def _send_bytes(self, code, body, ctype):
+    def _send_bytes(self, code, body, ctype, encodage=None):
         self.send_response(code)
         self._cors()
         self.send_header("Content-Type", ctype)
+        if encodage:
+            self.send_header("Content-Encoding", encodage)
+            self.send_header("Vary", "Accept-Encoding")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -3436,7 +3476,29 @@ class Handler(BaseHTTPRequestHandler):
             for key in ("cams", "list"):
                 if key in snapshot:
                     snapshot[key] = list(snapshot[key])
-        self._send_json(200, snapshot)
+        # Un catalogue ne change qu'a chaque collecte, mais il est demande par
+        # chaque visiteur : le serialiser a chaque fois couterait 20 Mo de texte
+        # et une compression complete par requete. On garde donc le corps produit
+        # jusqu'a la prochaine mise a jour de la source.
+        source = id(state)
+        version = (snapshot.get("updated"), len(snapshot.get("cams") or ()),
+                   len(snapshot.get("list") or ()))
+        with CORPS_LOCK:
+            entree = CORPS_CACHE.get(source)
+        accepte = "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
+        if not accepte:
+            # Client sans compression : cas rare, on serialise a la demande
+            # plutot que de garder 20 Mo de texte en memoire pour lui.
+            self._send_json(200, snapshot)
+            return
+        if not entree or entree[0] != version:
+            brut = json.dumps(snapshot, ensure_ascii=False,
+                              separators=(",", ":")).encode("utf-8")
+            entree = (version, _comprime(brut, 0))
+            del brut
+            with CORPS_LOCK:
+                CORPS_CACHE[source] = entree   # une entree par catalogue
+        self._send_bytes(200, entree[1], "application/json; charset=utf-8", "gzip")
 
     def do_GET(self):
         if not self._autorise():
