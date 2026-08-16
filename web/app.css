@@ -296,3 +296,127 @@ body{display:block;overflow:hidden}
 @media(max-width:800px){.city3dTitle{max-width:38vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.city3dAltLegend{font-size:7px;padding:6px}}
 @media(max-width:620px){.cameraContent{flex-direction:column}.personDock{flex:0 0 auto;min-height:178px;border-left:0;border-top:1px solid rgba(57,255,136,.32);justify-content:flex-end}.personPostit{width:145px}}
 ::-webkit-scrollbar{width:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--line2)}::-webkit-scrollbar-thumb:hover{background:var(--dim2)}
+
+/* =========================================================================
+   VERSION MOBILE — jusqu'a 768 px de large
+   Le rail de gauche devient une barre du bas atteignable au pouce, les
+   panneaux deviennent des feuilles qui montent, et les fenetres camera
+   occupent toute la largeur. Rien de tout cela ne s'applique au-dessus
+   de 768 px : l'affichage bureau est inchange.
+   ========================================================================= */
+@media (max-width: 768px) {
+  :root {
+    --barre: 58px;                                  /* hauteur de la barre du bas */
+    --bas: calc(var(--barre) + env(safe-area-inset-bottom, 0px));
+    --haut: env(safe-area-inset-top, 0px);
+  }
+
+  /* 100vh est faux sur mobile (la barre d'adresse ment) : dvh suit la hauteur reelle */
+  html, body { height: 100dvh; overscroll-behavior: none; }
+  #map { position: fixed; inset: 0; }
+
+  /* ---- le rail devient une barre du bas ---- */
+  .rail {
+    top: auto; bottom: 0; left: 0; right: 0;
+    width: auto; height: var(--bas);
+    flex-direction: row; justify-content: space-around; align-items: flex-start;
+    padding: 7px 4px 0;
+    border-right: 0; border-top: 1px solid var(--line);
+    background: rgba(10, 13, 16, .94);
+  }
+  .rail .logo, .rail .rsep { display: none; }        /* pas de place pour le decor */
+  .rail .foot { margin: 0; }
+  .rbtn { margin: 0; width: 56px; height: 44px; border-radius: 12px; }
+  .rbtn svg { width: 21px; height: 21px; }           /* cible tactile confortable */
+  .rbtn .tip { display: none; }                      /* pas d'info-bulle au doigt */
+
+  /* ---- les panneaux deviennent des feuilles qui montent ---- */
+  .panel, .panel.chatMode {
+    left: 0; right: 0; top: auto; bottom: var(--bas);
+    width: auto; max-width: none; height: 68dvh;
+    border-right: 0; border-top: 1px solid var(--line2);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -14px 38px rgba(0, 0, 0, .6);
+  }
+  /* :not(.show) : la regle fermee ne peut pas s'appliquer a un panneau ouvert,
+     ce qui evite tout conflit de cascade avec les regles bureau */
+  .panel:not(.show) { transform: translateY(calc(100% + var(--bas))); }
+  .panel.show { transform: translateY(0); }
+  .panel .ph { padding: 8px 16px 13px; position: relative; }
+  .panel .ph::before {                               /* poignee de prehension */
+    content: ''; position: absolute; left: 50%; top: 6px; width: 38px; height: 4px;
+    margin-left: -19px; border-radius: 3px; background: var(--line2);
+  }
+  .panel .ph .x { font-size: 24px; padding: 0 4px; }
+
+  /* ---- barre de recherche pleine largeur ---- */
+  .topbar { left: 12px; right: 12px; top: calc(12px + var(--haut)); gap: 9px; }
+  .searchBox { width: auto; flex: 1; padding: 11px 14px; }
+  .searchBox input { font-size: 16px; }              /* < 16px : iOS zoome au focus */
+  .avatar { width: 40px; height: 40px; }
+
+  /* ---- fenetres camera : une feuille pleine largeur, pas de deplacement ---- */
+  .cameraWindow, .cameraWindow.postit-active {
+    left: 0 !important; right: 0; top: auto !important;
+    bottom: var(--bas); width: 100% !important; max-width: 100%;
+    border-radius: 16px 16px 0 0; border-left: 0; border-right: 0;
+  }
+  .mhead { padding: 13px 14px; cursor: default; }
+  .mhead b { font-size: 12px; }
+  .mhead .x { font-size: 26px; padding: 0 6px; }
+  .note { padding: 11px 14px calc(11px + env(safe-area-inset-bottom, 0px)); flex-wrap: wrap; gap: 8px; }
+  .yolo { flex: 1; padding: 11px 14px !important; }
+  .mPlace { font-size: 9px; }
+  /* les post-its flottants deborderaient de l'ecran : on les met sous la video */
+  .cameraWindow.postit-active .cameraContent { overflow: hidden; }
+  .floatPostit { position: static; display: inline-block; width: 92px; margin: 6px 4px 0 0; }
+  .floatPostit img { width: 92px; height: 116px; }
+  .postitLinks { display: none; }
+
+  /* ---- panneau d'evenement : feuille du bas lui aussi ---- */
+  #evp {
+    top: auto; bottom: 0; left: 0; right: 0;
+    width: auto; max-width: none; height: 76dvh;
+    border-left: 0; border-top: 1px solid var(--line2);
+    border-radius: 18px 18px 0 0;
+  }
+  #evp:not(.show) { transform: translateY(102%); }
+  #evp.show { transform: translateY(0); }
+  #evp .b { padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+
+  /* ---- conversation ---- */
+  .chatMsg { max-width: 90%; font-size: 13px; }
+  .chatBar { padding: 10px 12px 12px; }
+  .chatBar textarea { font-size: 16px; }             /* evite le zoom iOS */
+  .chatBar button { width: 42px; height: 42px; }
+  .chatCtx { margin: 10px 12px 0; }
+
+  /* ---- panneau photo ---- */
+  .geoScroll { padding: 12px; }
+  .drop { padding: 26px 14px; }
+  .geoActions { flex-direction: column; }
+  .geoActions button { padding: 12px 8px; }
+  .cand, .lead, .ck { padding: 11px 12px; }
+
+  /* ---- controles Leaflet : degages de la barre de recherche et de celle du bas ---- */
+  /* le zoom passe en bas a gauche : en haut il se glissait sous la recherche */
+  .leaflet-top.leaflet-left { top: auto; bottom: calc(var(--bas) + 8px); }
+  .leaflet-left .leaflet-control { margin-left: 12px; }
+  .leaflet-control-zoom a { width: 34px; height: 34px; line-height: 34px; font-size: 17px; }
+  .leaflet-top.leaflet-right { padding-top: calc(62px + var(--haut)); }
+  .leaflet-bottom .leaflet-control { margin-bottom: calc(var(--bas) + 6px); }
+  .leaflet-control-attribution { font-size: 8px; }
+  .leaflet-control-layers { max-height: 40dvh; overflow-y: auto; }
+
+  /* ---- vue ville 3D ---- */
+  .city3dTop { top: calc(10px + var(--haut)); left: 10px; right: 10px; flex-wrap: wrap; gap: 6px; }
+  .city3dAltLegend { display: none; }
+  .city3dClose { padding: 10px 14px; }
+}
+
+/* Telephones etroits : on resserre encore */
+@media (max-width: 380px) {
+  .rbtn { width: 48px; }
+  .topbar { left: 8px; right: 8px; }
+  .chatMsg { max-width: 94%; }
+}

@@ -32,11 +32,27 @@ def pick_model_and_device():
             device = 0
     except Exception:
         pass
+    forced = os.environ.get("CARTE_YOLO")                 # pour imposer un modele precis
+    if forced and os.path.exists(os.path.join(BASE_DIR, forced)):
+        return os.path.join(BASE_DIR, forced), device
     finetuned = os.path.join(BASE_DIR, "yolo_camera.pt")  # produit par train_overnight.py
     if os.path.exists(finetuned):
         return finetuned, device
     if device != "cpu":
-        return os.path.join(BASE_DIR, "yolo11l.pt"), device   # gros modele, telecharge auto
+        # Mesure : yolo11l met plus de 100 s a se charger quand la carte est deja
+        # occupee par GeoCLIP (6 Go au total). Sous 3,5 Go libres on prend le modele
+        # nano, qui se charge en quelques secondes et suffit au suivi.
+        libre = 0.0
+        try:
+            import torch as _t
+            libre = _t.cuda.mem_get_info()[0] / (1024 ** 3)
+        except Exception:
+            pass
+        gros = os.path.join(BASE_DIR, "yolo11l.pt")
+        if libre >= 3.5 and os.path.exists(gros):
+            return gros, device
+        print("VRAM libre %.1f Go -> modele leger pour un demarrage rapide" % libre, flush=True)
+        return DEFAULT_MODEL, device
     return DEFAULT_MODEL, device
 TRACKER = os.path.join(BASE_DIR, "bytetrack_live.yaml")
 CONFIRM_HITS = 2
@@ -72,7 +88,12 @@ SR_URL = ("https://github.com/xinntao/Real-ESRGAN/releases/download/"
           "v0.2.5.0/realesr-general-x4v3.pth")
 
 def _sr_init():
-    """Charge le reseau SRVGGNetCompact une seule fois. False si indispo (=> repli)."""
+    """Charge le reseau SRVGGNetCompact une seule fois. False si indispo (=> repli).
+    Desactive par defaut : la super-resolution est cosmetique et prend de la VRAM
+    dont le detecteur a besoin. CARTE_SR=1 pour la reactiver."""
+    if os.environ.get("CARTE_SR") != "1":
+        _SR["ok"] = False
+        return False
     if _SR["ok"] is not None:
         return _SR["ok"]
     try:
@@ -184,7 +205,11 @@ class PostitHandler(BaseHTTPRequestHandler):
         if path != "/frame.jpg":
             self.send_response(404); self.end_headers(); return
         data = _postit_jpeg[0]
-        if not data or time.monotonic() - _postit_time[0] > 1.5:
+        # 1,5 s etait trop strict : une camera de type image ne se rafraichit qu'au mieux
+        # toutes les 1,5 s, donc le post-it etait presque toujours juge perime et le
+        # navigateur ne recevait que des 404. On sert la derniere image connue ;
+        # meta.json porte deja l'information de fraicheur.
+        if not data or time.monotonic() - _postit_time[0] > 30.0:
             self.send_response(404)
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
@@ -263,7 +288,9 @@ def resolve_skyline(page_url):
 
 
 def video_reader(stream):
-    cap = cv2.VideoCapture(stream)
+    # OpenCV 5 choisit parfois le lecteur CAP_IMAGES pour une URL de flux et croit lire
+    # une sequence d'images numerotees ('expected 0?[1-9][du] pattern'). On impose FFMPEG.
+    cap = cv2.VideoCapture(stream, cv2.CAP_FFMPEG)
     try:
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     except Exception:
@@ -273,7 +300,7 @@ def video_reader(stream):
         if not ok:
             cap.release()
             time.sleep(0.3)
-            cap = cv2.VideoCapture(stream)   # reboucle (utile pour les clips MP4 courts)
+            cap = cv2.VideoCapture(stream, cv2.CAP_FFMPEG)   # reboucle (clips MP4 courts)
             continue
         _frame[0] = f
         _frame_seq[0] += 1
@@ -400,6 +427,8 @@ def main():
     from ultralytics import YOLO
     model = YOLO(model_path)
 
+    _postit_meta[0] = {"detected": False, "seq": 0, "statut": "connexion au flux video",
+                       "boxes": [], "subjects": []}
     t0 = time.time()
     while _frame[0] is None and time.time() - t0 < 20:
         time.sleep(0.1)
@@ -554,7 +583,17 @@ def main():
             else:
                 focus_id, focus_box = None, None
                 fh, fw = f.shape[:2]
-                _postit_meta[0] = {"detected": False, "seq": postit_seq,
+                # Sans explication, une scene vide est indiscernable d'une panne : on
+                # publie la raison pour que l'interface puisse la montrer.
+                clarte = float(f.mean())
+                if clarte < 25:
+                    statut = "image trop sombre pour detecter (nuit)"
+                elif objs:
+                    statut = "objets detectes, suivi en cours de stabilisation"
+                else:
+                    statut = "aucun objet detecte dans la scene"
+                _postit_meta[0] = {"detected": False, "seq": postit_seq, "statut": statut,
+                    "clarte": round(clarte, 1),
                     "frame_w": fw, "frame_h": fh, "boxes": boxes_meta, "subjects": subjects_cache}
                 if now - focus_last > 2.2:
                     _postit_jpeg[0] = None

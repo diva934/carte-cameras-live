@@ -1764,6 +1764,25 @@ except Exception as _e:                       # l'app doit demarrer meme sans le
 ARBITER_MODEL = os.environ.get("CARTE_ARBITER_MODEL") or KEYS.get("arbiter_model") or "gpt-oss-120b"
 ARBITER_FALLBACK = KEYS.get("arbiter_fallback") or "DeepSeek-V3.2"
 GEOCLIP = {"net": None, "error": None, "device": "cpu"}
+
+
+def vram_totale_go():
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+    except Exception:
+        pass
+    return 0.0
+
+
+# Sur une carte de 6 Go, precharger GeoCLIP (1,7 Go) affame le suivi YOLO qui met alors
+# plus de 100 s a demarrer. On ne precharge qu'a partir de 8 Go, sauf demande explicite.
+_pre = os.environ.get("CARTE_PRECHARGE")
+PRECHARGE = (_pre == "1") if _pre is not None else (vram_totale_go() >= 8.0)
+# Meme raison pour StreetCLIP : second avis de valeur modeste, 1,7 Go de plus.
+_sc = os.environ.get("CARTE_STREETCLIP")
+STREETCLIP_DEFAUT = (_sc == "1") if _sc is not None else (vram_totale_go() >= 8.0)
 GEOCLIP_LOCK = threading.Lock()
 REVERSE_CACHE = {}
 REVERSE_GATE = threading.Lock()
@@ -2765,7 +2784,7 @@ def frame_from_hls(url, referer=None):
         with open(chemin, "wb") as f:
             f.write(segment)
         try:
-            cap = cv2.VideoCapture(chemin)
+            cap = cv2.VideoCapture(chemin, cv2.CAP_FFMPEG)
             ok, frame = cap.read()
             for _i in range(3):
                 ok2, f2 = cap.read()
@@ -2802,7 +2821,7 @@ def camera_frame(src, url, cam_id=None):
             with urllib.request.urlopen(req, timeout=25) as r:
                 return r.read(), None
         import cv2
-        cap = cv2.VideoCapture(cible)
+        cap = cv2.VideoCapture(cible, cv2.CAP_FFMPEG)
         ok, frame = False, None
         try:
             for _ in range(5):                    # les premieres trames sont souvent noires
@@ -2956,7 +2975,7 @@ def photo_locate(payload, publish=None):
                 result["ocr"] = {"erreur": str(e)[:200], "textes": []}
             if publish:
                 publish(result, "fichier analyse")
-            if payload.get("streetclip", True):
+            if payload.get("streetclip", STREETCLIP_DEFAUT):
                 try:
                     result["streetclip"] = photo_osint.streetclip_country(tmp)
                 except Exception as e:
@@ -3068,7 +3087,12 @@ def detect_args_from_source(source):
 # qui touchent au disque ou lancent des processus sont coupees.
 BIND = os.environ.get("CARTE_BIND") or KEYS.get("bind") or "127.0.0.1"
 SITE_TOKEN = os.environ.get("CARTE_TOKEN") or KEYS.get("site_token") or ""
-MODE_PUBLIC = BIND not in ("127.0.0.1", "localhost")
+# Derriere un reverse proxy (Caddy, nginx), on ecoute sur 127.0.0.1 tout en etant
+# expose au monde : se fier a l'adresse d'ecoute seule laisserait le service ouvert.
+# Le role "site" et CARTE_PUBLIC=1 forcent donc le mode protege.
+MODE_PUBLIC = (BIND not in ("127.0.0.1", "localhost")
+               or os.environ.get("CARTE_PUBLIC") == "1"
+               or (os.environ.get("CARTE_ROLE") or KEYS.get("role") or "").lower() == "site")
 ROUTES_LOCALES = ("/detect", "/detect-stop", "/api/photo-batch")
 # Trois roles possibles :
 #   complet  tout sur la machine (defaut, comportement historique)
@@ -3453,6 +3477,23 @@ class Handler(BaseHTTPRequestHandler):
                     if r:
                         args = r + [title]
                 ok = False
+                raison = None
+                if args:
+                    # Beaucoup de cameras du catalogue pointent vers des videos YouTube
+                    # supprimees. Sans ce controle, on lancait le suivi, il mourait en
+                    # silence, et l'interface restait vide sans jamais dire pourquoi.
+                    try:
+                        genre, cible, _ref = resolve_camera_stream(src, url, cid)
+                        if not genre or not cible:
+                            raison = "cette camera n'est plus diffusee ou son flux est illisible"
+                            args = None
+                    except Exception as e:
+                        message = str(e)
+                        if "not available" in message or "Private video" in message:
+                            raison = "cette camera n'est plus diffusee"
+                        else:
+                            raison = "flux inaccessible (%s)" % message[:80]
+                        args = None
                 if args:
                     here = os.path.dirname(os.path.abspath(__file__))
                     script = os.path.join(here, "detect_stream.py")
@@ -3463,10 +3504,21 @@ class Handler(BaseHTTPRequestHandler):
                         except Exception:
                             pass
                         popen_options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+                        # La sortie du sous-processus etait jetee : quand le suivi echouait,
+                        # aucune trace nulle part. On la conserve dans un journal.
+                        journal = open(os.path.join(here, "detect_stream.log"), "w",
+                                       encoding="utf-8", errors="replace")
+                        # Modele leger impose : yolo11l met plus de 100 s a charger quand
+                        # GeoCLIP occupe deja la carte, ce qui donne l'impression que le
+                        # suivi ne demarre pas. Le nano charge en quelques secondes.
+                        env = dict(os.environ, CARTE_YOLO="yolo26n.pt", YOLO_AUTOINSTALL="false")
+                        popen_options.update({"stdout": journal, "stderr": subprocess.STDOUT,
+                                              "env": env})
                         DETECT[0] = subprocess.Popen([sys.executable, script] + args, **popen_options)
                         DETECT_TOKEN[0] = "%x" % time.time_ns()
                     ok = True
                 self._send(200 if ok else 400, json.dumps({"ok": ok, "token": DETECT_TOKEN[0] if ok else None,
+                    "raison": raison if not ok else None,
                     "frame_url": "http://127.0.0.1:8772/frame.jpg" if ok else None,
                     "stream_url": "http://127.0.0.1:8772/stream.mjpg" if ok else None,
                     "meta_url": "http://127.0.0.1:8772/meta.json" if ok else None}), "application/json; charset=utf-8")
@@ -3608,8 +3660,11 @@ def main():
     threading.Thread(target=cables_load, daemon=True).start()
     # Prechargement : GeoCLIP met ~20 s a charger ses poids. Le faire au demarrage
     # evite de payer cette attente sur la premiere photo analysee.
-    if photo_osint is not None and ROLE != "site":
+    if photo_osint is not None and ROLE != "site" and PRECHARGE:
         threading.Thread(target=geoclip_model, daemon=True).start()
+    elif photo_osint is not None and ROLE != "site":
+        print("GeoCLIP charge a la demande (VRAM limitee) : premiere analyse plus lente,")
+        print("  mais le suivi YOLO demarre vite. CARTE_PRECHARGE=1 pour precharger.")
     srv = ThreadingHTTPServer((BIND, PORT), Handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = "http://localhost:%d" % PORT

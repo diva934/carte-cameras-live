@@ -1,0 +1,190 @@
+{
+ "_provenance": "Rejeu d'une analyse reelle. OCR, GeoCLIP et toponymes captures le 14/08/2026 ; etages vision et arbitrage repris d'une execution du meme jour sur la meme camera (verite terrain 60.3115, 24.2410).",
+ "ok": true,
+ "exif": null,
+ "metadata": {
+  "exif": {},
+  "xmp": null,
+  "alertes": [
+   "aucune metadonnee : image nettoyee, capture d'ecran, ou re-encodee"
+  ],
+  "format": "JPEG",
+  "taille": [
+   1280,
+   720
+  ],
+  "mode": "RGB"
+ },
+ "forensics": {
+  "alertes": [],
+  "ela_max": 17.0,
+  "ela_moyen": 1.19,
+  "tables_quant": 2,
+  "qualite_estimee": 65.3,
+  "ecart_bloc": 0.46
+ },
+ "ocr": {
+  "moteur": "RapidOCR / PP-OCR",
+  "textes": [
+   {
+    "texte": "Tie 25",
+    "score": 1.0
+   },
+   {
+    "texte": "Myllylampi",
+    "score": 1.0
+   },
+   {
+    "texte": "Vihti",
+    "score": 0.96
+   },
+   {
+    "texte": "Tie 25 Vihti, Myllylampi",
+    "score": 0.93
+   }
+  ]
+ },
+ "streetclip": {
+  "pays": [
+   {
+    "nom": "Allemagne",
+    "score": 0.1335
+   },
+   {
+    "nom": "Russie",
+    "score": 0.1327
+   },
+   {
+    "nom": "Etats-Unis",
+    "score": 0.1242
+   }
+  ],
+  "modele": "StreetCLIP (CC-BY-NC-4.0)"
+ },
+ "candidates": [
+  {
+   "lat": 50.83358,
+   "lng": 8.19666,
+   "score": 0.00912,
+   "place": ""
+  },
+  {
+   "lat": 50.51102,
+   "lng": 12.62501,
+   "score": 0.0091,
+   "place": ""
+  },
+  {
+   "lat": 51.05583,
+   "lng": 7.9495,
+   "score": 0.00814,
+   "place": ""
+  },
+  {
+   "lat": 47.84105,
+   "lng": 8.31549,
+   "score": 0.00627
+  },
+  {
+   "lat": 50.83738,
+   "lng": 8.02623,
+   "score": 0.00611
+  }
+ ],
+ "vlm": {
+  "textes": [
+   "Tie 25 Vihti, Myllylampi"
+  ],
+  "pays": "Finlande",
+  "region": "",
+  "ville": "Vihti",
+  "lieu": "Myllylampi",
+  "confiance": "elevee",
+  "model": "gemma-4-31B-it",
+  "provider": "sambanova",
+  "indices": [
+   "Panneau routier en finnois",
+   "Conduite a droite",
+   "Foret boreale de coniferes",
+   "Marquage au sol nordique"
+  ],
+  "lat": 60.31378,
+  "lng": 24.23928,
+  "query": "Myllylampi, Vihti, Finlande"
+ },
+ "leads": {
+  "points": [
+   {
+    "nom": "Vihti",
+    "lat": 60.417,
+    "lng": 24.32366
+   },
+   {
+    "nom": "Myllylampi",
+    "lat": 60.24242,
+    "lng": 24.04309
+   }
+  ],
+  "cluster": {
+   "lat": 60.32971,
+   "lng": 24.18337,
+   "noms": [
+    "Vihti",
+    "Myllylampi"
+   ],
+   "n": 2
+  }
+ },
+ "arbiter": {
+  "rang": 0,
+  "rejette": true,
+  "confiance": "elevee",
+  "model": "gpt-oss-120b",
+  "raison": "Les panneaux lisibles (Tie 25, Vihti, Myllylampi) sont en finnois, la conduite a droite et la foret boreale confirment la Finlande, region de Vihti. Aucun des candidats proposes ne correspond a ces indices."
+ },
+ "best": {
+  "lat": 60.31378,
+  "lng": 24.23928,
+  "place": "Myllylampi, Vihti, Finlande",
+  "source": "lecture des panneaux",
+  "precision": "lieu nomme"
+ },
+ "checks": {
+  "terrain": {
+   "verdict": "confirme",
+   "confirmes": 4,
+   "cherches": [
+    "Vihti",
+    "Myllylampi",
+    "25"
+   ],
+   "trouves": [
+    {
+     "nom": "Vihti",
+     "type": "town"
+    },
+    {
+     "nom": "Myllylampi",
+     "type": "suburb"
+    },
+    {
+     "nom": "Lohjanharjuntie",
+     "type": "trunk"
+    },
+    {
+     "nom": "Kehatie",
+     "type": "trunk"
+    },
+    {
+     "nom": "25",
+     "type": "trunk"
+    }
+   ]
+  }
+ },
+ "verite_terrain": {
+  "lat": 60.3115,
+  "lng": 24.241,
+  "erreur_metres": 271
+ }
+}

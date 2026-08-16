@@ -37,14 +37,20 @@ automatique est là pour que les rapports soient partageables.
 
 ## Démarrage
 
+**Windows** — double-clic sur `installer.bat`, puis sur `lancer.bat`.
+Guide détaillé pour un testeur : [INSTALLATION.md](INSTALLATION.md).
+
+**Autres systèmes**
+
 ```bash
 pip install -r requirements.txt
 cp keys.example.json keys.json     # puis renseigner au moins vlm_key
 python earthcam_live_map.py
 ```
 
-L'analyse de photo demande en plus PyTorch CUDA, GeoCLIP et RapidOCR : voir les lignes
-commentées de `requirements.txt`. Sans eux, la carte et l'assistant fonctionnent quand même.
+La carte et les caméras fonctionnent sans aucune clé. L'assistant demande une clé API
+gratuite ; l'analyse de photo demande en plus PyTorch CUDA, GeoCLIP et RapidOCR
+(lignes commentées de `requirements.txt`).
 
 ## Architecture
 

@@ -1,3 +1,17 @@
+// --- Adaptation mobile ---------------------------------------------------
+// viewport-fit=cover est indispensable pour que env(safe-area-inset-*) renvoie
+// autre chose que 0 sur les telephones a encoche. On le pose ici plutot que dans
+// index.html, qui porte la configuration de deploiement et ne doit pas bouger.
+(function(){
+  const meta=document.querySelector('meta[name=viewport]');
+  if(meta&&!/viewport-fit/.test(meta.content))meta.content=meta.content+', viewport-fit=cover';
+  const estMobile=()=>window.matchMedia('(max-width: 768px)').matches;
+  const majClasse=()=>document.body.classList.toggle('mobile',estMobile());
+  majClasse();
+  window.addEventListener('resize',majClasse);
+  window.__mobile=estMobile;
+})();
+
 // Base de l'API : vide en local (meme origine), definie par window.CARTE_API quand le
 // front est heberge separement (Vercel) et le back ailleurs.
 const API=(typeof window!=='undefined'&&window.CARTE_API)?String(window.CARTE_API).replace(/\/$/,''):'';
@@ -18,6 +32,7 @@ const api=chemin=>API+chemin;
     };
 })();
 
+
 (function(){
   const panel=document.getElementById('railPanel'),title=document.getElementById('panelTitle');
   const btns=Array.from(document.querySelectorAll('.rbtn[data-pane]'));
@@ -37,6 +52,7 @@ const api=chemin=>API+chemin;
   function close(){current=null;btns.forEach(b=>b.classList.remove('on'));panel.classList.remove('show');}
   btns.forEach(b=>b.addEventListener('click',()=>show(b.dataset.pane)));
   document.getElementById('panelX').addEventListener('click',close);
+  window.__demo=Object.assign(window.__demo||{},{ouvrir:show,fermer:close});
   document.getElementById('railCollapse').addEventListener('click',close);
   document.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
   document.getElementById('q').addEventListener('focus',()=>{if(current!=='cams')show('cams');});
@@ -466,6 +482,7 @@ function openCam(c){
   el.querySelector('.x').addEventListener('click',e=>{e.stopPropagation();closeCamera(state);});
   yolo.addEventListener('click',()=>launchDetect(state));el.addEventListener('pointerdown',()=>bringCameraFront(state));
   makeCameraDraggable(state);state.observer=new MutationObserver(()=>requestAnimationFrame(()=>enableRegionZoom(state.vid)));state.observer.observe(state.vid,{childList:true});
+  if(window.__mobile&&window.__mobile()&&window.__demo&&window.__demo.fermer)window.__demo.fermer();
   const n=cameraSerial++,left=(window.innerWidth>900?300:12)+(n%7)*28,top=64+(n%7)*28;clampCameraWindow(state,left,top);bringCameraFront(state);openCameraStream(state);
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeCity3D();});
@@ -475,7 +492,7 @@ function attachPersonPostit(state,info){
   stopPersonTracking(state);activePersonTrackingState=state;state.detectToken=info.token;
   state.el.classList.add('postit-active');
   const svgns='http://www.w3.org/2000/svg';
-  const badge=document.createElement('div');badge.className='personTrackingBadge';badge.textContent='Suivi multi-objets · cadre intact';state.vid.appendChild(badge);
+  const badge=document.createElement('div');badge.className='personTrackingBadge';badge.textContent='Demarrage du suivi...';state.vid.appendChild(badge);
   const boxSvg=document.createElementNS(svgns,'svg');boxSvg.classList.add('trackBoxes');boxSvg.setAttribute('preserveAspectRatio','none');state.vid.appendChild(boxSvg);
   const linkSvg=document.createElementNS(svgns,'svg');linkSvg.classList.add('postitLinks');linkSvg.setAttribute('preserveAspectRatio','none');state.content.appendChild(linkSvg);
   const FR={person:'PERSONNE',car:'VOITURE',truck:'CAMION',bus:'BUS',motorcycle:'MOTO',bicycle:'VELO',boat:'BATEAU',airplane:'AVION',train:'TRAIN',bird:'OISEAU',cat:'CHAT',dog:'CHIEN',horse:'CHEVAL',sheep:'MOUTON',cow:'VACHE',elephant:'ELEPHANT',bear:'OURS',zebra:'ZEBRE',giraffe:'GIRAFE'};
@@ -519,9 +536,14 @@ function attachPersonPostit(state,info){
     for(const [id,c] of cards){if(!present.has(id)){c.el.remove();cards.delete(id);}}
     linkSvg.innerHTML=paths;
   };
+  let badgeVu='';
   const refresh=()=>{if(state.closed||state.detectToken!==info.token)return;fetch(info.meta_url+'?t='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(meta=>{
     drawBoxes(meta);layout(meta);
-  }).catch(()=>{});};
+    // Sans retour visible, une scene vide ressemble a une panne : on affiche la raison.
+    const n=((meta&&meta.subjects)||[]).length;
+    const txt=n?('Suivi actif · '+n+' objet'+(n>1?'s':'')):(meta&&meta.statut?meta.statut:'Demarrage du suivi...');
+    if(txt!==badgeVu){badge.textContent=txt;badgeVu=txt;}
+  }).catch(()=>{if(badgeVu!=='Suivi interrompu'){badge.textContent='Suivi interrompu';badgeVu='Suivi interrompu';}});};
   state.detectTimer=setInterval(refresh,80);refresh();
 }
 function launchDetect(state){
@@ -532,7 +554,11 @@ function launchDetect(state){
   b.textContent='Ouverture du post-it...';
   fetch(api('/detect?')+q2+'&title='+encodeURIComponent(cam.title)).then(r=>r.json()).then(j=>{
     if(state.closed){if(j&&j.token)fetch(api('/detect-stop?token=')+encodeURIComponent(j.token),{keepalive:true}).catch(()=>{});return;}if(j.ok){attachPersonPostit(state,j);b.textContent='POST-IT ACTIF';}
-    else{b.textContent='Flux tiers non analysable';setTimeout(()=>{if(!state.closed)b.textContent='RELANCER LE POST-IT';},4500);}
+    else{
+      // On dit pourquoi : camera supprimee, flux illisible, lecteur tiers opaque.
+      b.textContent=(j.raison||'Flux non analysable').toUpperCase();
+      b.title=j.raison||'';
+      setTimeout(()=>{if(!state.closed)b.textContent='RELANCER LE POST-IT';},7000);}
   }).catch(()=>{if(state.closed)return;b.textContent='Erreur';setTimeout(()=>{if(!state.closed)b.textContent='RELANCER LE POST-IT';},4000);});
 }
 let searchTimer=null,renderFrame=null,pollBusy=false;
@@ -759,7 +785,7 @@ const photoLayer=L.layerGroup().addTo(map);
         m.bindTooltip('#'+(i+1)+' · '+pct.toFixed(1)+'% · '+(c.place||''),{direction:'top',offset:[0,-18]});
         m.on('click',()=>focusOn(c.lat,c.lng,12));
       });
-    }else if(!r.exif){
+    }else if(!r.exif&&!r.encours){
       h+='<div class="geoHead">Aucune estimation</div><div class="geoStatus err">'+esc(r.geoclip_error||'GeoCLIP indisponible')+'</div>';
     }
     const ocr=r.ocr||{},sclip=r.streetclip||{};
@@ -868,6 +894,7 @@ const photoLayer=L.layerGroup().addTo(map);
             if(j.status==='error')return reject(new Error(j.error||'echec'));
             if(j.status==='done')return resolve(j.result);
             if(j.result&&Object.keys(j.result).length){
+              j.result.encours=(j.status!=='done');
               lastResult=j.result;window.lastGeoResult=j.result;
               try{render(j.result);}catch(e){}
               say('Analyse : '+(j.etape||'en cours')+'... '+((Date.now()-t0)/1000).toFixed(0)+' s');
@@ -891,6 +918,10 @@ const photoLayer=L.layerGroup().addTo(map);
     finally{busy=false;go.disabled=!dataUrl;}
   }
   go.addEventListener('click',locate);
+  window.__demo=Object.assign(window.__demo||{},{
+    geoRender:render, geoDire:say,
+    geoPhoto:u=>{dataUrl=u;window.lastGeoImage=u;img.src=u;prev.style.display='block';go.disabled=false;},
+    geoVider:()=>{res.style.display='none';res.innerHTML='';photoLayer.clearLayers();}});
   // ---- dossier d'enquete, anonymisation, lot ----
   let lastResult=null;
   const actions=document.getElementById('geoActions');
@@ -1027,6 +1058,7 @@ window.lastGeoResult=null;window.lastGeoImage=null;
   }
   send.addEventListener('click',envoyer);
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();envoyer();}});
+  window.__demo=Object.assign(window.__demo||{},{chatAjoute:ajoute,chatRemplit:remplit,chatMaj:majContexte});
   input.addEventListener('input',()=>{input.style.height='auto';
     input.style.height=Math.min(120,input.scrollHeight)+'px';});
 })();
